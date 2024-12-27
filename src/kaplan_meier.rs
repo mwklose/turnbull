@@ -1,10 +1,8 @@
 use core::f64;
 use std::ops::Div;
 
-use nalgebra::{DMatrix, DVector, Dyn, Matrix, VecStorage, Vector, U1};
-
 use crate::censoring::{surv_result::SurvResult, Surv};
-extern crate nalgebra as na;
+use nalgebra::{DMatrix, DVector, Dyn, Matrix, VecStorage, Vector, U1};
 
 pub fn kaplan_meier(events: Vec<Surv>, weights: Option<Vec<f64>>) -> SurvResult {
     let mut unique_event_times = events
@@ -25,7 +23,7 @@ pub fn kaplan_meier(events: Vec<Surv>, weights: Option<Vec<f64>>) -> SurvResult 
         None => DVector::from_element(events.len(), 1_f64),
     };
 
-    // TODO: get indicators of censoring set at current time point
+    // get indicators of censoring set at current time point
     let dm = DMatrix::from_fn(events.len(), unique_event_times.len(), |i, j| {
         let surv = events.get(i).unwrap();
         let event_time = unique_event_times.get(j).unwrap();
@@ -36,7 +34,9 @@ pub fn kaplan_meier(events: Vec<Surv>, weights: Option<Vec<f64>>) -> SurvResult 
         return 0.0;
     });
 
-    // TODO: loop here
+    // TODO: get indicators of truncation set at current time point
+
+    // loop here
     let mut tol = 1e9;
     while tol > 1e-9 {
         (tol, density_vec) = km_helper(&dm, &density_vec, &weight_matrix);
@@ -68,10 +68,12 @@ fn km_helper(
     }
 
     // Get column sums
-
     let mut colsums = component_wise.tr_mul(weights_matrix);
 
     println!("Colsums: {:?}\n", colsums);
+
+    // TODO: handle truncation sets as well
+
     // Maximization
     // Normalize column sums
 
@@ -143,6 +145,34 @@ mod tests {
 
             assert!(t.0 == expected.get(i).unwrap().0);
             assert!((t.1 - expected.get(i).unwrap().1) < 1e-9);
+            assert!(t.2 == expected.get(i).unwrap().2);
+        }
+    }
+
+    #[test]
+    fn km_two_censoring() {
+        let surv_vec = vec![
+            Surv::new_event(1, 0.0, 2.0),
+            Surv::new_censor(0.0, 4.0),
+            Surv::new_event(1, 0.0, 6.0),
+            Surv::new_censor(0.0, 8.0),
+            Surv::new_event(1, 0.0, 10.0),
+        ];
+
+        let result = kaplan_meier(surv_vec, None);
+
+        let expected = vec![
+            (2.0, 0.8, 0.0),
+            (6.0, 0.8 * 2.0 / 3.0, 0.0),
+            (10.0, 0.0, 0.0),
+            (f64::INFINITY, 0.0, 0.0),
+        ];
+
+        for (i, t) in result.get_survival_table().iter().enumerate() {
+            println!("Time {}: {:?}", i, t);
+
+            assert!(t.0 == expected.get(i).unwrap().0);
+            assert!((t.1 - expected.get(i).unwrap().1) < 1e-8);
             assert!(t.2 == expected.get(i).unwrap().2);
         }
     }
